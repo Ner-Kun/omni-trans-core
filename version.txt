@@ -1,0 +1,3 @@
+VERSION=1.0.0
+REPO_URL=https://github.com/Ner-Kun/omni-trans-core
+CRITICAL=true
