@@ -22,7 +22,7 @@ except ImportError:
     pass
 
 try:
-    from .developer_tools import DeveloperToolsManager
+    from .developer_tools import DeveloperToolsManager # type: ignore
     dev_tools_available = True
 except ImportError:
     dev_tools_available = False

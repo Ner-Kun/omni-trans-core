@@ -5,6 +5,7 @@ import shutil
 import copy
 from typing import Any
 from ruamel.yaml import YAML
+from .constants import CORE_VERSION
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -112,7 +113,8 @@ default_settings: dict[str, Any] = {
     "ux_hide_discover_limits_warning": False,
     "ux_show_wip_on_startup": True,
     "thinking_failure_threshold": 3,
-    }
+    "CORE_VERSION": CORE_VERSION,
+}
 
 current_settings: dict[str, Any] = default_settings.copy()
 

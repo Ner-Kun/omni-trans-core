@@ -1,0 +1,10 @@
+PySide6
+requests
+packaging
+litellm
+openai
+ruamel.yaml
+google-genai
+rich
+
+pyqtdarktheme

@@ -1,6 +1,4 @@
 import sys
-# import os
-# import subprocess
 import requests
 import logging
 import webbrowser
@@ -12,9 +10,8 @@ from .localization_manager import translate
 logger = logging.getLogger(f"{settings.LOG_PREFIX}_CORE.updater")
 
 FORCE_UPDATE_CHECK_IN_DEV_MODE = False
-# TODO: Змінити URL
 CORE_VERSION_URL = (
-    "https://raw.githubusercontent.com/Ner-Kun/omni_trans_core/main/version.txt"
+    "https://raw.githubusercontent.com/Ner-Kun/omni-trans-core/refs/heads/main/version.txt"
 )
 
 
@@ -44,9 +41,6 @@ def _get_version_info(url: str):
 
 
 def open_releases_page_and_exit(repo_url: str):
-    """
-    Opens the GitHub releases page for the given repo URL and exits the app.
-    """
     releases_url = f"{repo_url.rstrip('/')}/releases"
     logger.info(f"Opening releases page for user: {releases_url}")
     try:
