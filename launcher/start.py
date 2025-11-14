@@ -3,6 +3,7 @@ import sys
 import subprocess
 import platform
 import urllib.request
+import urllib.parse
 import zipfile
 import tarfile
 import shutil
@@ -13,7 +14,7 @@ import traceback
 import json
 import re
 from pathlib import Path
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict
 
 ROOT_DIR = Path(__file__).parent.parent.resolve()
 LOG_FILE_PATH = ROOT_DIR / "launcher.log"
@@ -57,9 +58,7 @@ CORE_API_URL = "https://api.github.com/repos/Ner-Kun/omni-trans-core/releases"
 CORE_ASSET_NAME = "omni-trans-core.zip"
 CORE_INSTALL_PATH = ROOT_DIR / "omni_trans_core"
 
-APP_MANIFEST_URL = (
-    "https://raw.githubusercontent.com/Ner-Kun/omni-trans-core/main/version.txt"
-)
+APP_CATALOG_URL = "https://raw.githubusercontent.com/Ner-Kun/omni-trans-core/main/launcher-manifest.txt"
 REQUIREMENTS_URL = (
     "https://raw.githubusercontent.com/Ner-Kun/omni-trans-core/main/requirements.txt"
 )
@@ -217,7 +216,7 @@ def run_uv_command(args: list[str]) -> subprocess.CompletedProcess:
     )
 
 
-def manage_requirements(args: argparse.Namespace, console) -> bool:
+def manage_requirements(args: argparse.Namespace, console, Panel) -> bool:
     if args.skip_deps:
         logging.warning("--skip-deps flag detected. Skipping dependency management.")
         return True
@@ -441,66 +440,15 @@ def check_git_installed() -> bool:
         return False
 
 
-def fetch_app_manifest(console, Table):
-    try:
-        logging.info(f"Fetching app manifest from {APP_MANIFEST_URL}")
-        with urllib.request.urlopen(APP_MANIFEST_URL, timeout=5) as response:
-            content = response.read().decode("utf-8")
-
-        apps = []
-        for line in content.splitlines():
-            if line.strip().upper().startswith("APP_"):
-                try:
-                    _, value = line.split("=", 1)
-                    name, folder = value.strip().split(";")
-                    apps.append({"name": name.strip(), "folder": folder.strip()})
-                except ValueError:
-                    logging.warning(f"Could not parse app line in manifest: {line}")
-        if apps:
-            logging.info(f"Found {len(apps)} app(s) in manifest.")
-            table = Table(
-                title="[bold magenta]Available Applications[/bold magenta]",
-                border_style="magenta",
-            )
-            table.add_column("App Name", style="cyan", no_wrap=True)
-            table.add_column("Folder", style="green")
-            for app in apps:
-                table.add_row(app["name"], app["folder"])
-            console.print(table)
-            return apps
-        logging.warning("No applications found in the manifest.")
-        return None
-    except Exception as e:
-        logging.warning(f"Could not fetch app manifest: {e}")
-        return None
-
-
-def find_launchable_app(console, Panel, Table) -> Optional[Path]:
+def find_launchable_app(console, Panel) -> Optional[Path]:
     console.print(
         Panel(
-            "🔍 Searching for a launchable application...",
+            "🔍 Searching for a local application...",
             title="[bold cyan]Step 3[/bold cyan]",
             border_style="cyan",
         )
     )
-    app_manifest = fetch_app_manifest(console, Table)
-    if app_manifest:
-        logging.info("Searching for apps listed in the manifest...")
-        for app_info in app_manifest:
-            app_folder = ROOT_DIR / app_info["folder"]
-            runner_path = app_folder / "runner.py"
-            if runner_path.exists():
-                logging.info(
-                    f"Found '{app_info['name']}' via manifest at: {app_folder}"
-                )
-                console.print(
-                    f"[green]✓ Found '{app_info['name']}' via manifest at: {app_folder}[/green]"
-                )
-                return runner_path
-
-    logging.info(
-        "Manifest not available or no listed apps found locally. Scanning folders..."
-    )
+    logging.info("Scanning for local application...")
     excluded_dirs = {
         ".git",
         ".venv",
@@ -514,11 +462,167 @@ def find_launchable_app(console, Panel, Table) -> Optional[Path]:
             runner_path = item / "runner.py"
             if runner_path.exists():
                 logging.info(f"Found launchable app by scanning at: {item}")
-                console.print(
-                    f"[green]✓ Found launchable app by scanning at: {item}[/green]"
-                )
+                console.print(f"[green]✓ Found launchable app at: {item}[/green]")
                 return runner_path
+    logging.info("No local application found.")
     return None
+
+
+def fetch_app_catalog(console) -> Optional[List[Dict[str, str]]]:
+    try:
+        logging.info(f"Fetching app catalog from {APP_CATALOG_URL}")
+        req = urllib.request.Request(
+            APP_CATALOG_URL, headers={"User-Agent": "Omni-Trans-Launcher"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            content = response.read().decode("utf-8")
+
+        apps = []
+        for line in content.splitlines():
+            if line.strip().upper().startswith("APP_"):
+                try:
+                    _, value = line.split("=", 1)
+                    parts = [p.strip() for p in value.strip().split(";")]
+                    if len(parts) == 3:
+                        apps.append(
+                            {"name": parts[0], "folder": parts[1], "repo_url": parts[2]}
+                        )
+                except ValueError:
+                    logging.warning(f"Could not parse app line in manifest: {line}")
+
+        if apps:
+            logging.info(f"Found {len(apps)} app(s) in catalog.")
+            return apps
+        else:
+            logging.warning("No applications found in the catalog.")
+            return None
+    except Exception as e:
+        logging.warning(f"Could not fetch app catalog: {e}")
+        console.print(f"[yellow]⚠ Could not fetch app catalog: {e}[/yellow]")
+        return None
+
+
+def install_application(console, Panel, Confirm, app_info: Dict[str, str]) -> bool:
+    display_name = app_info["name"]
+    repo_url = app_info["repo_url"]
+
+    console.print(
+        Panel(
+            f"📦 Installing {display_name}",
+            title="[bold cyan]Application Installation[/bold cyan]",
+            border_style="cyan",
+        )
+    )
+
+    try:
+        parsed_url = urllib.parse.urlparse(repo_url)
+        path_parts = parsed_url.path.strip("/").split("/")
+
+        if len(path_parts) < 2:
+            console.print(f"[red]✗ Invalid GitHub repository URL: {repo_url}[/red]")
+            return False
+
+        owner, repo = path_parts[0], path_parts[1]
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/releases"
+        asset_name = f"{repo}.zip"
+
+        logging.info(f"Fetching release info for {display_name} from {api_url}")
+        req = urllib.request.Request(
+            api_url, headers={"User-Agent": "Omni-Trans-Launcher"}
+        )
+        with urllib.request.urlopen(req) as response:
+            release_data = json.loads(response.read().decode())
+
+        if not release_data:
+            console.print(f"[red]✗ No releases found for {display_name}.[/red]")
+            return False
+
+        latest_release = release_data[0]
+        if latest_release.get("prerelease", False):
+            if not Confirm.ask(
+                f"\n[yellow]The latest version of {display_name} is a pre-release. Install anyway?[/yellow]",
+                default=False,
+            ):
+                console.print("[yellow]Installation cancelled.[/yellow]")
+                return False
+
+        asset = next(
+            (
+                asset
+                for asset in latest_release.get("assets", [])
+                if asset.get("name") == asset_name
+            ),
+            None,
+        )
+        if not asset or not asset.get("browser_download_url"):
+            console.print(
+                f"[red]✗ Could not find download asset '{asset_name}' in the latest release of {display_name}.[/red]"
+            )
+            return False
+
+        download_url = asset["browser_download_url"]
+
+        def post_extract_app(extract_dir: Path) -> bool:
+            console.print(f"[green]✓ {display_name} installed successfully![/green]")
+            return True
+
+        return download_and_extract_asset(
+            download_url, asset_name, ROOT_DIR, post_extract_app
+        )
+
+    except Exception as e:
+        logging.error(
+            f"Failed to install application {display_name}: {e}", exc_info=True
+        )
+        console.print(f"[red]✗ Failed to install {display_name}: {e}[/red]")
+        return False
+
+
+def prompt_and_install_app(console, Panel, Table, Confirm, Prompt) -> bool:
+    console.print(
+        Panel(
+            "No local application found. Searching for installable apps...",
+            title="[yellow]Setup Required[/yellow]",
+            border_style="yellow",
+        )
+    )
+
+    apps = fetch_app_catalog(console)
+    if not apps:
+        console.print(
+            "[red]✗ Could not find any applications to install. Please check your connection or the manifest file.[/red]"
+        )
+        return False
+
+    table = Table(
+        title="[bold magenta]Available Applications for Installation[/bold magenta]"
+    )
+    table.add_column("Num", style="cyan")
+    table.add_column("Application Name", style="green")
+
+    for i, app in enumerate(apps):
+        table.add_row(str(i + 1), app["name"])
+
+    console.print(table)
+
+    choice = Prompt.ask(
+        "\nEnter the number of the application to install (or 'q' to quit)", default="q"
+    )
+
+    if choice.lower() == "q":
+        return False
+
+    try:
+        choice_index = int(choice) - 1
+        if 0 <= choice_index < len(apps):
+            selected_app = apps[choice_index]
+            return install_application(console, Panel, Confirm, selected_app)
+        else:
+            console.print("[red]Invalid selection.[/red]")
+            return False
+    except ValueError:
+        console.print("[red]Invalid input. Please enter a number.[/red]")
+        return False
 
 
 if __name__ == "__main__":
@@ -565,7 +669,7 @@ if __name__ == "__main__":
     try:
         from rich.console import Console
         from rich.panel import Panel
-        from rich.prompt import Confirm
+        from rich.prompt import Confirm, Prompt
         from rich.table import Table
         from rich.text import Text
 
@@ -592,7 +696,6 @@ if __name__ == "__main__":
                 border_style="green",
             )
         )
-        
         ensure_uv_available()
 
         if not check_git_installed():
@@ -605,7 +708,7 @@ if __name__ == "__main__":
             )
             sys.exit(1)
 
-        if not manage_requirements(args, console):
+        if not manage_requirements(args, console, Panel):
             sys.exit(1)
 
         if not check_core_installed():
@@ -631,12 +734,27 @@ if __name__ == "__main__":
             logging.info("Omni Trans Core is already installed.")
             console.print("[green]✓ Omni Trans Core is already installed.[/green]")
 
-        runner_path = find_launchable_app(console, Panel, Table)
+        runner_path = find_launchable_app(console, Panel)
+
         if not runner_path:
-            logging.critical("No launchable application found.")
+            was_installed = prompt_and_install_app(
+                console, Panel, Table, Confirm, Prompt
+            )
+            if was_installed:
+                runner_path = find_launchable_app(console, Panel)
+            else:
+                logging.info("No application selected or installation failed. Exiting.")
+                console.print("No application selected. Exiting.")
+                time.sleep(3)
+                sys.exit(0)
+
+        if not runner_path:
+            logging.critical(
+                "Could not find a runner.py even after installation attempt."
+            )
             console.print(
                 Panel(
-                    "[red]Fatal: No launchable application found. Could not find a 'runner.py' in any application folder.[/red]",
+                    "[red]Fatal: Application could not be found after installation. The downloaded archive might be structured incorrectly.[/red]",
                     title="[bold red]✗ Launch Error[/bold red]",
                 )
             )
@@ -654,18 +772,8 @@ if __name__ == "__main__":
         env["PYTHONPATH"] = str(ROOT_DIR)
 
         result = subprocess.run(
-            [sys.executable, str(runner_path)],
-            check=False,
-            env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
+            [sys.executable, str(runner_path)], check=False, env=env
         )
-
-        if result.stdout:
-            logging.info(f"Application stdout:\n{result.stdout}")
-        if result.stderr:
-            logging.warning(f"Application stderr:\n{result.stderr}")
 
         if result.returncode != 0:
             logging.warning(
