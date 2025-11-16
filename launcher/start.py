@@ -399,65 +399,82 @@ class Launcher:
         return parser.parse_args()
 
     def _check_for_self_update(self):
-            self.console.print("🔍 Checking for launcher updates...")
-            try:
-                with urllib.request.urlopen(Config.App.CATALOG_URL, timeout=5) as response:
-                    content = response.read().decode("utf-8")
-                
-                remote_version_str = None
-                for line in content.splitlines():
-                    if line.strip().upper().startswith("LAUNCHER_VERSION"):
-                        remote_version_str = line.split("=", 1)[1].strip()
-                        break
+        self.console.print("🔍 Checking for launcher updates...")
+        try:
+            with urllib.request.urlopen(Config.App.CATALOG_URL, timeout=5) as response:
+                content = response.read().decode("utf-8")
 
-                if not remote_version_str:
-                    self.console.print("[yellow]Could not find launcher version in manifest. Skipping update.[/yellow]")
-                    return
+            remote_version_str = None
+            for line in content.splitlines():
+                if line.strip().upper().startswith("LAUNCHER_VERSION"):
+                    remote_version_str = line.split("=", 1)[1].strip()
+                    break
 
-                if parse_version(remote_version_str) > parse_version(Config.LAUNCHER_VERSION):
-                    self.console.print(f"✨ New launcher version available: [bold green]{remote_version_str}[/bold green]. Updating...")
-                    
-                    new_launcher_path = Config.LAUNCHER_DIR / "start.py.new"
-                    updater_script_path = Config.LAUNCHER_DIR / "_updater.py"
+            if not remote_version_str:
+                self.console.print(
+                    "[yellow]Could not find launcher version in manifest. Skipping update.[/yellow]"
+                )
+                return
 
-                    with urllib.request.urlopen(Config.App.LAUNCHER_URL, timeout=15) as response:
-                        with open(new_launcher_path, "wb") as f:
-                            f.write(response.read())
+            if parse_version(remote_version_str) > parse_version(
+                Config.LAUNCHER_VERSION
+            ):
+                self.console.print(
+                    f"✨ New launcher version available: [bold green]{remote_version_str}[/bold green]. Updating..."
+                )
 
-                    _updater_script_content = f"""
-    import sys
-    import os
-    import time
-    import subprocess
+                new_launcher_path = Config.LAUNCHER_DIR / "start.py.new"
+                updater_script_path = Config.LAUNCHER_DIR / "_updater.py"
 
-    old_path = '{Config.LAUNCHER_DIR / "start.py"}'
-    new_path = '{new_launcher_path}'
-    original_args = {sys.argv[1:]}
+                with urllib.request.urlopen(
+                    Config.App.LAUNCHER_URL, timeout=15
+                ) as response:
+                    with open(new_launcher_path, "wb") as f:
+                        f.write(response.read())
 
-    time.sleep(1)
+                _updater_script_content = f"""
+import sys
+import os
+import time
+import subprocess
 
-    try:
-        if os.path.exists(old_path):
-            os.remove(old_path)
-        os.rename(new_path, old_path)
-        
-        subprocess.Popen([sys.executable, old_path] + original_args)
-        
-    finally:
-        if os.path.exists(__file__):
+old_path = {repr(str(Config.LAUNCHER_DIR / "start.py"))}
+new_path = {repr(str(new_launcher_path))}
+original_args = {sys.argv[1:]}
+
+time.sleep(1)
+
+try:
+    if os.path.exists(old_path):
+        os.remove(old_path)
+    os.rename(new_path, old_path)
+    
+    subprocess.Popen([sys.executable, old_path] + original_args)
+    
+finally:
+    if os.path.exists(__file__):
+        try:
             os.remove(__file__)
-    """
-                    with open(updater_script_path, "w", encoding="utf-8") as f:
-                        f.write(_updater_script_content)
+        except OSError:
+            pass
+"""
+                with open(updater_script_path, "w", encoding="utf-8") as f:
+                    f.write(_updater_script_content)
 
-                    subprocess.Popen([sys.executable, str(updater_script_path)])
-                    sys.exit(0)
-                else:
-                    self.console.print("[green]✓[/green] Launcher is up to date.")
+                subprocess.Popen(
+                    [sys.executable, str(updater_script_path)],
+                    creationflags=subprocess.DETACHED_PROCESS,
+                    close_fds=True,
+                )
+                sys.exit(0)
+            else:
+                self.console.print("[green]✓[/green] Launcher is up to date.")
 
-            except Exception as e:
-                logging.error(f"Launcher update check failed: {e}")
-                self.console.print("[yellow]⚠ Could not check for launcher updates. Continuing with current version.[/yellow]")
+        except Exception as e:
+            logging.error(f"Launcher update check failed: {e}")
+            self.console.print(
+                "[yellow]⚠ Could not check for launcher updates. Continuing with current version.[/yellow]"
+            )
 
     def _is_running_in_venv(self) -> bool:
         return sys.prefix == str(Config.VENV_DIR)
