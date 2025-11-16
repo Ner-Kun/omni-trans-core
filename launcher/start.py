@@ -4,7 +4,6 @@ import subprocess
 import platform
 import urllib.request
 import urllib.parse
-from packaging.version import parse as parse_version
 import zipfile
 import tarfile
 import shutil
@@ -399,6 +398,7 @@ class Launcher:
         return parser.parse_args()
 
     def _check_for_self_update(self):
+        from packaging.version import parse as parse_version
         self.console.print("🔍 Checking for launcher updates...")
         try:
             with urllib.request.urlopen(Config.App.CATALOG_URL, timeout=5) as response:
@@ -783,8 +783,6 @@ finally:
                 )
             )
             
-            
-
             if not self._manage_dependencies():
                 sys.exit(1)
                 
