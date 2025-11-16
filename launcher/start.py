@@ -783,10 +783,12 @@ finally:
                 )
             )
             
-            self._check_for_self_update()
+            
 
             if not self._manage_dependencies():
                 sys.exit(1)
+                
+            self._check_for_self_update()
 
             if not self._manage_core():
                 self.console.print(
