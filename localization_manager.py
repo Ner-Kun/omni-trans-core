@@ -63,7 +63,7 @@ class LocalizationManager(QtCore.QObject):
     def add_translation_directory(self, path: str) -> None:
         if os.path.isdir(path) and path not in self._translation_dirs:
             self._translation_dirs.append(path)
-            logger.info(f"Added translation source directory: {path}")
+            logger.debug(f"Added translation source directory: {path}")
 
     def get_current_file_paths(self) -> dict[str, str]:
         paths: dict[str, str] = {}
@@ -142,12 +142,12 @@ class LocalizationManager(QtCore.QObject):
             data_dict.update(load_file(file_path))
         if is_source:
             self._source_data = data_dict
-            logger.info(
+            logger.debug(
                 f"Loaded {len(self._source_data)} source keys for language '{lang_code}'."
             )
         else:
             self._target_data = data_dict
-            logger.info(
+            logger.debug(
                 f"Loaded {len(self._target_data)} target keys for language '{lang_code}'."
             )
 

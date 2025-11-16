@@ -368,7 +368,7 @@ class CoreApp(QtWidgets.QMainWindow):
             tab_name = getattr(tab_instance, "TAB_NAME", "Unnamed Tab")
             self.tab_widget.addTab(tab_instance, tab_name)
             self.loaded_tabs[tab_name] = tab_instance
-            logger.info(f"Tab loaded: '{tab_name}'.")
+            logger.debug(f"Tab loaded: '{tab_name}'.")
             if hasattr(tab_instance, "translation_requested"):
                 tab_instance.translation_requested.connect(
                     self._on_translation_requested
