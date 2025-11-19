@@ -732,7 +732,8 @@ finally:
         )
 
         env = os.environ.copy()
-        env["PYTHONPATH"] = str(Config.ROOT_DIR)
+        current_path = os.environ.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{str(Config.ROOT_DIR)}{os.pathsep}{current_path}"
 
         result = subprocess.run(
             [sys.executable, str(runner_path)], check=False, env=env

@@ -82,22 +82,53 @@ class GeminiStrategy(AbstractConnectionStrategy):
             break
         if key_to_use:
             self.settings["current_api_key_index"] = (sel_key_orig_idx + 1) % num_k
-            job_data = self.manager.pending_translation_jobs.popleft()
-            job_data["api_key"] = key_to_use
-            self._record_api_request_timestamp(key_to_use)
-            runnable = self.create_runnable(job_data)
-            self.manager.thread_pool.start(runnable)
-            self.manager.active_translation_jobs += 1
-            logger.debug(
-                f"[Gemini] Dispatched job for '{job_data['original_item']['source_text']}'."
-            )
+
+            if not self.manager.pending_translation_jobs:
+                return
+
+            job_data = self.manager.pending_translation_jobs[0]
+
+            try:
+                job_data["api_key"] = key_to_use
+                self._record_api_request_timestamp(key_to_use)
+                runnable = self.create_runnable(job_data)
+                self.manager.thread_pool.start(runnable)
+                self.manager.pending_translation_jobs.popleft()
+                self.manager.active_translation_jobs += 1
+
+                logger.debug(
+                    f"[Gemini] Dispatched job for '{job_data['original_item']['source_text']}'."
+                )
+            except Exception as e:
+                logger.error(f"[Gemini] Failed to dispatch job: {e}", exc_info=True)
+                failed_job = self.manager.pending_translation_jobs.popleft()
+                self.manager._handle_job_failed(
+                    failed_job,
+                    str(e),
+                    "Dispatch Error",
+                    "Failed to start thread/runnable",
+                    e,
+                )
             if self.manager.pending_translation_jobs:
                 self.manager.translation_timer.start(100)
         else:
+            wait_times = []
+            for k in api_keys:
+                cd_end = self.api_key_cooldown_end_times.get(k, 0)
+                remaining = cd_end - now
+
+                if remaining > 0:
+                    wait_times.append(remaining)
+
+            if wait_times:
+                next_attempt_delay_ms = int(min(wait_times) * 1000) + 50
+            else:
+                next_attempt_delay_ms = 1000
+
             logger.warning(
-                "All Gemini API keys are currently in cooldown or at RPM limit."
+                f"All Gemini keys busy/cooldown. Smart waiting: {next_attempt_delay_ms}ms."
             )
-            self.manager.translation_timer.start(1000)
+            self.manager.translation_timer.start(next_attempt_delay_ms)
 
     def create_runnable(self, job_data: dict) -> "QtCore.QRunnable":
         signals = JobSignals()
@@ -246,14 +277,25 @@ class LiteLLMStrategy(AbstractConnectionStrategy):
         job_data = self._pending_job_data
         if not job_data:
             return
+
         self._pending_job_data = None
-        self.usage_tracker["requests"].append(time.monotonic())
-        runnable = self.create_runnable(job_data)
-        self.manager.thread_pool.start(runnable)
-        self.manager.active_translation_jobs += 1
-        logger.debug(
-            f"[LiteLLM] Dispatched job for '{job_data['original_item']['source_text']}'."
-        )
+
+        try:
+            self.usage_tracker["requests"].append(time.monotonic())
+            runnable = self.create_runnable(job_data)
+            self.manager.thread_pool.start(runnable)
+
+            self.manager.pending_translation_jobs.popleft()
+            self.manager.active_translation_jobs += 1
+
+            logger.debug(
+                f"[LiteLLM] Dispatched job for '{job_data['original_item']['source_text']}'."
+            )
+        except Exception as e:
+            logger.error(f"[LiteLLM] Dispatch failed: {e}")
+            failed_job = self.manager.pending_translation_jobs.popleft()
+            self.manager._handle_job_failed(failed_job, str(e), "Dispatch Error", "", e)
+
         if self.manager.pending_translation_jobs:
             self.manager.translation_timer.start(100)
 
@@ -317,7 +359,7 @@ class LiteLLMStrategy(AbstractConnectionStrategy):
         if self._is_rate_limited():
             logger.debug(f"Dispatch for '{self.name}' deferred: Rate limit reached.")
             return
-        self._pending_job_data = self.manager.pending_translation_jobs.popleft()
+        self._pending_job_data = self.manager.pending_translation_jobs[0]
         if is_sequential:
             self._execute_dispatch()
         else:

@@ -22,3 +22,5 @@ if (-not (Test-Path $launcherPath)) {
 }
 
 py -3 $launcherPath $args
+
+Read-Host "Press Enter to exit"

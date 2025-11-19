@@ -9,7 +9,6 @@ if TYPE_CHECKING:
     from .translation_manager import TranslationManager
 
 class JobSignals(QObject):
-    # job_completed = Signal(dict, str, dict, float)
     job_completed = Signal(dict, str, str, dict, float)
     job_failed = Signal(object, str, str, str, object, dict)
     inspector_update = Signal(str, str, str, str, dict)
