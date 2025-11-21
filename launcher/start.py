@@ -143,18 +143,24 @@ class ConsoleManager:
                 TextColumn,
                 TimeRemainingColumn,
             )
-
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[bold]{task.description}"),
                 BarColumn(bar_width=40, complete_style="green", finished_style="green"),
                 TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
                 TimeRemainingColumn(),
+                console=self.console,
                 **kwargs,
             ) as progress:
                 yield progress
         else:
-            yield None
+            class DummyProgress:
+                def add_task(self, description, total=None):
+                    print(f"\nBeginning: {description}")
+                    return 0
+                def update(self, task_id, advance=0, completed=None):
+                    pass
+            yield DummyProgress()
 
 
 class AssetManager:
@@ -193,7 +199,7 @@ class AssetManager:
             with urllib.request.urlopen(req) as head_response:
                 total_size = int(head_response.headers.get("content-length", 0))
 
-            with self.console.progress_bar(console=self.console.console) as progress:
+            with self.console.progress_bar() as progress:
                 download_task = progress.add_task("Downloading...", total=total_size)
 
                 buffer = bytearray()
@@ -216,7 +222,7 @@ class AssetManager:
             self.console.print(f"Extracting [cyan]'{asset_name}'[/cyan]...")
             logging.info(f"Extracting '{asset_name}'...")
 
-            with self.console.progress_bar(console=self.console.console) as progress:
+            with self.console.progress_bar() as progress:
                 extract_task = progress.add_task("Extracting files...", total=100)
 
                 if temp_archive_path.suffix == ".zip":
@@ -812,21 +818,20 @@ finally:
                 sys.exit(1)
 
             import importlib
-
             spec = importlib.util.find_spec("rich")
             if not self.args.rich_bootstrapped and spec is None:
                 self.console.print("Bootstrapping rich...")
                 result = subprocess.run(
                     [str(Config.UV.PATH), "pip", "install", "rich==13.7.0"], check=False
                 )
-                if result.returncode != 0:
-                    self.console.print(
-                        "[yellow]Warning: Failed to install 'rich'. Continuing with basic UI.[/yellow]"
-                    )
-                else:
+                if result.returncode == 0:
                     self.console.print("Restarting launcher to activate rich...")
                     new_args = sys.argv + ["--rich-bootstrapped"]
                     os.execv(sys.executable, [sys.executable] + new_args)
+                else:
+                    self.console.print(
+                        "[yellow]Warning: Failed to install 'rich'. Continuing with basic UI.[/yellow]"
+                    )
 
             self.console.print(
                 f"\n[bold cyan]Omni Trans Launcher v{Config.LAUNCHER_VERSION}[/bold cyan]\n"
