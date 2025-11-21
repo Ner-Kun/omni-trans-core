@@ -89,7 +89,7 @@ class ConsoleManager:
             try:
                 import sys
 
-                sys.stdin.flush()
+                sys.stdout.flush()
                 return self.Confirm.ask(prompt, default=default, console=self.console)
             except Exception as e:
                 logging.warning(f"Rich confirm failed: {e}. Using fallback.")
@@ -106,7 +106,7 @@ class ConsoleManager:
             try:
                 import sys
 
-                sys.stdin.flush()
+                sys.stdout.flush()
                 return self.Prompt.ask(prompt, default=default, console=self.console)
             except Exception as e:
                 logging.warning(f"Rich prompt failed: {e}. Using fallback.")
